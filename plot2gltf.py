@@ -1,12 +1,22 @@
 import numpy as np
 from pygltflib import GLTF2, Buffer, BufferView, Accessor, Mesh, Primitive, Node, Scene, Material
-from pygltflib import BufferTarget, ComponentType, AccessorType
 import colorsys
 import base64
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
 import io
+
+# Import constants from pygltflib
+from pygltflib.validator import (
+    ARRAY_BUFFER, 
+    ELEMENT_ARRAY_BUFFER,
+    FLOAT,
+    UNSIGNED_INT,
+    POINTS,
+    LINES,
+    TRIANGLES
+)
 
 class GLTFGeometryExporter:
     def __init__(self):
@@ -24,6 +34,7 @@ class GLTFGeometryExporter:
         
         self.color_index = 0
         self.buffer_offset = 0
+        self.all_data = bytearray()
     
     def _get_unique_color(self):
         """Generate a unique color using HSV color space"""
@@ -31,45 +42,57 @@ class GLTFGeometryExporter:
         self.color_index += 1
         return colorsys.hsv_to_rgb(hue, 0.8, 0.95)
     
+    def _add_to_buffer(self, data):
+        """Add data to the buffer and return offset"""
+        offset = len(self.all_data)
+        self.all_data.extend(data.tobytes())
+        return offset
+    
     def _create_buffer_view(self, data, target):
         """Create a buffer view for the given data"""
-        byte_length = data.nbytes
+        offset = self._add_to_buffer(data)
         buffer_view = BufferView(
             buffer=0,
-            byteOffset=self.buffer_offset,
-            byteLength=byte_length,
+            byteOffset=offset,
+            byteLength=data.nbytes,
             target=target
         )
-        self.buffer_offset += byte_length
-        return buffer_view
+        self.gltf.bufferViews.append(buffer_view)
+        return len(self.gltf.bufferViews) - 1
     
-    def _create_accessor(self, buffer_view_index, component_type, count, accessor_type):
+    def _create_accessor(self, buffer_view_index, component_type, count, accessor_type, min_vals=None, max_vals=None):
         """Create an accessor for the given buffer view"""
-        return Accessor(
+        accessor = Accessor(
             bufferView=buffer_view_index,
             componentType=component_type,
             count=count,
-            type=accessor_type
+            type=accessor_type,
+            min=min_vals,
+            max=max_vals
         )
+        self.gltf.accessors.append(accessor)
+        return len(self.gltf.accessors) - 1
     
     def _create_material(self, color=None, texture_index=None):
         """Create a material with the given color or texture"""
         if color is None:
             color = self._get_unique_color()
         
-        material = Material(
-            pbrMetallicRoughness={
-                "baseColorFactor": [*color, 1.0] if texture_index is None else [1.0, 1.0, 1.0, 1.0],
-                "metallicFactor": 0.0,
-                "roughnessFactor": 0.5
-            },
-            alphaMode="BLEND" if texture_index is not None else "OPAQUE"
-        )
+        pbr_metallic_roughness = {
+            "baseColorFactor": [*color, 1.0] if texture_index is None else [1.0, 1.0, 1.0, 1.0],
+            "metallicFactor": 0.0,
+            "roughnessFactor": 0.5
+        }
         
         if texture_index is not None:
-            material.pbrMetallicRoughness.baseColorTexture = {
+            pbr_metallic_roughness["baseColorTexture"] = {
                 "index": texture_index
             }
+        
+        material = Material(
+            pbrMetallicRoughness=pbr_metallic_roughness,
+            alphaMode="BLEND" if texture_index is not None else "OPAQUE"
+        )
         
         self.gltf.materials.append(material)
         return len(self.gltf.materials) - 1
@@ -118,6 +141,122 @@ class GLTFGeometryExporter:
         
         return len(self.gltf.textures) - 1
 
+    def add_triangles(self, vertices, faces, color=None):
+        """Add triangle mesh to the GLTF file"""
+        vertices = np.array(vertices, dtype=np.float32)
+        faces = np.array(faces, dtype=np.uint32).flatten()  # Flatten for indices
+        
+        # Create buffer views
+        vertex_view_idx = self._create_buffer_view(vertices, ARRAY_BUFFER)
+        index_view_idx = self._create_buffer_view(faces, ELEMENT_ARRAY_BUFFER)
+        
+        # Create accessors
+        vertex_accessor_idx = self._create_accessor(
+            vertex_view_idx,
+            FLOAT,
+            len(vertices),
+            "VEC3",
+            vertices.min(axis=0).tolist(),
+            vertices.max(axis=0).tolist()
+        )
+        
+        index_accessor_idx = self._create_accessor(
+            index_view_idx,
+            UNSIGNED_INT,
+            len(faces),
+            "SCALAR"
+        )
+        
+        # Create material
+        material_idx = self._create_material(color)
+        
+        # Create primitive
+        primitive = Primitive(
+            attributes={"POSITION": vertex_accessor_idx},
+            indices=index_accessor_idx,
+            material=material_idx,
+            mode=TRIANGLES
+        )
+        
+        self.gltf.meshes[0].primitives.append(primitive)
+        return vertices, faces
+
+    def add_lines(self, vertices, edges, color=None):
+        """Add lines to the GLTF file"""
+        vertices = np.array(vertices, dtype=np.float32)
+        edges = np.array(edges, dtype=np.uint32).flatten()
+        
+        vertex_view_idx = self._create_buffer_view(vertices, ARRAY_BUFFER)
+        edge_view_idx = self._create_buffer_view(edges, ELEMENT_ARRAY_BUFFER)
+        
+        vertex_accessor_idx = self._create_accessor(
+            vertex_view_idx,
+            FLOAT,
+            len(vertices),
+            "VEC3",
+            vertices.min(axis=0).tolist(),
+            vertices.max(axis=0).tolist()
+        )
+        
+        edge_accessor_idx = self._create_accessor(
+            edge_view_idx,
+            UNSIGNED_INT,
+            len(edges),
+            "SCALAR"
+        )
+        
+        material_idx = self._create_material(color)
+        
+        primitive = Primitive(
+            attributes={"POSITION": vertex_accessor_idx},
+            indices=edge_accessor_idx,
+            material=material_idx,
+            mode=LINES
+        )
+        
+        self.gltf.meshes[0].primitives.append(primitive)
+        return vertices, edges
+
+    def add_points(self, vertices, color=None):
+        """Add points to the GLTF file"""
+        vertices = np.array(vertices, dtype=np.float32)
+        
+        vertex_view_idx = self._create_buffer_view(vertices, ARRAY_BUFFER)
+        
+        vertex_accessor_idx = self._create_accessor(
+            vertex_view_idx,
+            FLOAT,
+            len(vertices),
+            "VEC3",
+            vertices.min(axis=0).tolist(),
+            vertices.max(axis=0).tolist()
+        )
+        
+        material_idx = self._create_material(color)
+        
+        primitive = Primitive(
+            attributes={"POSITION": vertex_accessor_idx},
+            material=material_idx,
+            mode=POINTS
+        )
+        
+        self.gltf.meshes[0].primitives.append(primitive)
+        return vertices
+
+    def add_normals(self, points, directions, color=None):
+        """Add normal vectors to the GLTF file as lines"""
+        points = np.array(points, dtype=np.float32)
+        directions = np.array(directions, dtype=np.float32)
+        
+        # Create end points for the normal vectors
+        endpoints = points + directions
+        vertices = np.vstack((points, endpoints))
+        
+        # Create edges connecting points to their normal vector endpoints
+        edges = np.array([[i, i + len(points)] for i in range(len(points))])
+        
+        return self.add_lines(vertices, edges, color)
+
     def add_text(self, position, text, size=1.0, color=None):
         """Add 3D text at the specified position"""
         position = np.array(position, dtype=np.float32)
@@ -146,185 +285,59 @@ class GLTFGeometryExporter:
         texture_index = self._create_text_texture(text, font_size=32, color=color or (1, 1, 1))
         
         # Create buffer views
-        vertex_buffer_view = self._create_buffer_view(vertices, BufferTarget.ARRAY_BUFFER)
-        uv_buffer_view = self._create_buffer_view(uvs, BufferTarget.ARRAY_BUFFER)
-        index_buffer_view = self._create_buffer_view(indices, BufferTarget.ELEMENT_ARRAY_BUFFER)
+        vertex_view_idx = self._create_buffer_view(vertices, ARRAY_BUFFER)
+        uv_view_idx = self._create_buffer_view(uvs, ARRAY_BUFFER)
+        index_view_idx = self._create_buffer_view(indices, ELEMENT_ARRAY_BUFFER)
         
         # Create accessors
-        vertex_accessor = self._create_accessor(
-            len(self.gltf.bufferViews),
-            ComponentType.FLOAT,
+        vertex_accessor_idx = self._create_accessor(
+            vertex_view_idx,
+            FLOAT,
             len(vertices),
-            AccessorType.VEC3
+            "VEC3",
+            vertices.min(axis=0).tolist(),
+            vertices.max(axis=0).tolist()
         )
-        uv_accessor = self._create_accessor(
-            len(self.gltf.bufferViews) + 1,
-            ComponentType.FLOAT,
+        
+        uv_accessor_idx = self._create_accessor(
+            uv_view_idx,
+            FLOAT,
             len(uvs),
-            AccessorType.VEC2
+            "VEC2",
+            [0, 0],
+            [1, 1]
         )
-        index_accessor = self._create_accessor(
-            len(self.gltf.bufferViews) + 2,
-            ComponentType.UNSIGNED_INT,
+        
+        index_accessor_idx = self._create_accessor(
+            index_view_idx,
+            UNSIGNED_INT,
             len(indices),
-            AccessorType.SCALAR
+            "SCALAR"
         )
         
         # Create material with texture
-        material_index = self._create_material(color, texture_index)
+        material_idx = self._create_material(color, texture_index)
         
         # Create primitive
         primitive = Primitive(
             attributes={
-                "POSITION": len(self.gltf.accessors),
-                "TEXCOORD_0": len(self.gltf.accessors) + 1
+                "POSITION": vertex_accessor_idx,
+                "TEXCOORD_0": uv_accessor_idx
             },
-            indices=len(self.gltf.accessors) + 2,
-            material=material_index,
-            mode=4  # TRIANGLES
+            indices=index_accessor_idx,
+            material=material_idx,
+            mode=TRIANGLES
         )
         
-        # Update GLTF
-        self.gltf.bufferViews.extend([vertex_buffer_view, uv_buffer_view, index_buffer_view])
-        self.gltf.accessors.extend([vertex_accessor, uv_accessor, index_accessor])
         self.gltf.meshes[0].primitives.append(primitive)
-        
         return vertices, indices
 
-    def add_triangles(self, vertices, faces, color=None):
-        """Add triangle mesh to the GLTF file"""
-        vertices = np.array(vertices, dtype=np.float32)
-        faces = np.array(faces, dtype=np.uint32)
-        
-        # Create buffer views
-        vertex_buffer_view = self._create_buffer_view(vertices, BufferTarget.ARRAY_BUFFER)
-        index_buffer_view = self._create_buffer_view(faces, BufferTarget.ELEMENT_ARRAY_BUFFER)
-        
-        # Create accessors
-        vertex_accessor = self._create_accessor(
-            len(self.gltf.bufferViews),
-            ComponentType.FLOAT,
-            len(vertices),
-            AccessorType.VEC3
-        )
-        index_accessor = self._create_accessor(
-            len(self.gltf.bufferViews) + 1,
-            ComponentType.UNSIGNED_INT,
-            len(faces) * 3,
-            AccessorType.SCALAR
-        )
-        
-        # Create material
-        material_index = self._create_material(color)
-        
-        # Create primitive
-        primitive = Primitive(
-            attributes={"POSITION": len(self.gltf.accessors)},
-            indices=len(self.gltf.accessors) + 1,
-            material=material_index,
-            mode=4  # TRIANGLES
-        )
-        
-        # Update GLTF
-        self.gltf.bufferViews.extend([vertex_buffer_view, index_buffer_view])
-        self.gltf.accessors.extend([vertex_accessor, index_accessor])
-        self.gltf.meshes[0].primitives.append(primitive)
-        
-        return vertices, faces
-    
-    def add_lines(self, vertices, edges, color=None):
-        """Add lines to the GLTF file"""
-        vertices = np.array(vertices, dtype=np.float32)
-        edges = np.array(edges, dtype=np.uint32)
-        
-        vertex_buffer_view = self._create_buffer_view(vertices, BufferTarget.ARRAY_BUFFER)
-        index_buffer_view = self._create_buffer_view(edges, BufferTarget.ELEMENT_ARRAY_BUFFER)
-        
-        vertex_accessor = self._create_accessor(
-            len(self.gltf.bufferViews),
-            ComponentType.FLOAT,
-            len(vertices),
-            AccessorType.VEC3
-        )
-        index_accessor = self._create_accessor(
-            len(self.gltf.bufferViews) + 1,
-            ComponentType.UNSIGNED_INT,
-            len(edges) * 2,
-            AccessorType.SCALAR
-        )
-        
-        material_index = self._create_material(color)
-        
-        primitive = Primitive(
-            attributes={"POSITION": len(self.gltf.accessors)},
-            indices=len(self.gltf.accessors) + 1,
-            material=material_index,
-            mode=1  # LINES
-        )
-        
-        self.gltf.bufferViews.extend([vertex_buffer_view, index_buffer_view])
-        self.gltf.accessors.extend([vertex_accessor, index_accessor])
-        self.gltf.meshes[0].primitives.append(primitive)
-        
-        return vertices, edges
-    
-    def add_points(self, vertices, color=None):
-        """Add points to the GLTF file"""
-        vertices = np.array(vertices, dtype=np.float32)
-        
-        vertex_buffer_view = self._create_buffer_view(vertices, BufferTarget.ARRAY_BUFFER)
-        
-        vertex_accessor = self._create_accessor(
-            len(self.gltf.bufferViews),
-            ComponentType.FLOAT,
-            len(vertices),
-            AccessorType.VEC3
-        )
-        
-        material_index = self._create_material(color)
-        
-        primitive = Primitive(
-            attributes={"POSITION": len(self.gltf.accessors)},
-            material=material_index,
-            mode=0  # POINTS
-        )
-        
-        self.gltf.bufferViews.append(vertex_buffer_view)
-        self.gltf.accessors.append(vertex_accessor)
-        self.gltf.meshes[0].primitives.append(primitive)
-        
-        return vertices
-    
-    def add_normals(self, points, directions, color=None):
-        """Add normal vectors to the GLTF file as lines"""
-        points = np.array(points, dtype=np.float32)
-        directions = np.array(directions, dtype=np.float32)
-        
-        # Create end points for the normal vectors
-        endpoints = points + directions
-        vertices = np.vstack((points, endpoints))
-        
-        # Create edges connecting points to their normal vector endpoints
-        edges = np.array([[i, i + len(points)] for i in range(len(points))])
-        
-        return self.add_lines(vertices, edges, color)
-    
     def save(self, filename):
         """Save the GLTF file"""
-        # Combine all data into a single buffer
-        all_data = b''
-        for buffer_view in self.gltf.bufferViews:
-            accessor = self.gltf.accessors[len(all_data)]
-            if accessor.type == AccessorType.VEC3:
-                data = np.array(accessor.data, dtype=np.float32)
-            else:
-                data = np.array(accessor.data, dtype=np.uint32)
-            all_data += data.tobytes()
-        
-        # Create the buffer
+        # Create the final buffer
         self.gltf.buffers = [Buffer(
-            byteLength=len(all_data),
-            uri="data:application/octet-stream;base64," + base64.b64encode(all_data).decode('ascii')
+            byteLength=len(self.all_data),
+            uri=f"data:application/octet-stream;base64,{base64.b64encode(self.all_data).decode('ascii')}"
         )]
         
         # Save to file
