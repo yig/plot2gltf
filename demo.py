@@ -49,9 +49,9 @@ class GLTFDemo:
         
         self.exporter.add_lines(axis_vertices, axis_edges, color=(1, 0, 0))
         # Add axis labels
-        self.exporter.add_text([1.1, 0, 0], "X", size=0.3, color=(1, 0, 0))
-        self.exporter.add_text([0, 1.1, 0], "Y", size=0.3, color=(0, 1, 0))
-        self.exporter.add_text([0, 0, 1.1], "Z", size=0.3, color=(0, 0, 1))
+        self.exporter.add_text([1.1, 0, 0], "X", size=0.5, color=(1, 0, 0))
+        self.exporter.add_text([0, 1.1, 0], "Y", size=0.5, color=(0, 1, 0))
+        self.exporter.add_text([0, 0, 1.1], "Z", size=0.5, color=(0, 0, 1))
 
     def demo_spiral(self):
         """Create a spiral point cloud"""
@@ -115,9 +115,9 @@ class GLTFDemo:
         self.exporter.add_spheres([sphere_centers[2]], radius=0.15, color=(0, 0, 1))  # Blue
         
         # Add labels
-        self.exporter.add_text([-1, 2.3, 0], "Small", size=0.2, color=(1, 0, 0))
-        self.exporter.add_text([-0.5, 2.3, 0], "Medium", size=0.2, color=(0, 1, 0))
-        self.exporter.add_text([0, 2.3, 0], "Large", size=0.2, color=(0, 0, 1))
+        self.exporter.add_text([-1, 2.3, 0], "Small", size=0.15, color=(1, 0, 0))
+        self.exporter.add_text([-0.5, 2.3, 0], "Medium", size=0.15, color=(0, 1, 0))
+        self.exporter.add_text([0, 2.3, 0], "Large", size=0.15, color=(0, 0, 1))
         
         # Create a grid of spheres to show positioning
         grid_size = 3
@@ -148,17 +148,17 @@ class GLTFDemo:
         points1 = helix_points + [-2, 0, 0]  # Shifted left
         self.exporter.add_cylinder_strips(points1, radius=0.03, color=(0, 0.8, 0.8), 
                                         add_spheres=False)
-        self.exporter.add_text([-2, 1, 0], "Without Spheres", size=0.3)
+        self.exporter.add_text([-2, 1, 0], "Without Spheres", size=0.5)
         
         # 2. Cylinder strip with spheres
         points2 = helix_points.copy()  # Center
         self.exporter.add_cylinder_strips(points2, radius=0.03, color=(0.8, 0.4, 0))
-        self.exporter.add_text([2, 1, 0], "With Spheres", size=0.3)
+        self.exporter.add_text([2, 1, 0], "With Spheres", size=0.5)
         
         # 3. Thicker version
         points3 = helix_points + [2, 0, 0]  # Shifted right
         self.exporter.add_cylinder_strips(points3, radius=0.05, color=(0.4, 0.8, 0))
-        self.exporter.add_text([4, 1, 0], "Thicker", size=0.3)
+        self.exporter.add_text([4, 1, 0], "Thicker", size=0.5)
 
     def demo_normal_arrows(self):
         """Demonstrate normal arrows"""
@@ -183,9 +183,9 @@ class GLTFDemo:
     def demo_text_sizes(self):
         """Demonstrate different text sizes"""
         texts = [
-            {"pos": [-1, -1, 0], "text": "Small", "size": 0.3},
-            {"pos": [-1, -1, 0.5], "text": "Medium", "size": 0.5},
-            {"pos": [-1, -1, 1], "text": "Large", "size": 0.7}
+            {"pos": [-1, -1, 0], "text": "Small", "size": 0.5},
+            {"pos": [-1, -1, 1], "text": "Medium", "size": 0.8},
+            {"pos": [-1, -1, 2], "text": "Large", "size": 1.2}
         ]
         
         for text_info in texts:

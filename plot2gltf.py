@@ -15,7 +15,10 @@ from pygltflib.validator import (
     UNSIGNED_INT,
     POINTS,
     LINES,
-    TRIANGLES
+    TRIANGLES,
+    LINEAR,
+    LINEAR_MIPMAP_LINEAR,
+    CLAMP_TO_EDGE
 )
 
 class GLTFGeometryExporter:
@@ -98,26 +101,46 @@ class GLTFGeometryExporter:
         self.gltf.materials.append(material)
         return len(self.gltf.materials) - 1
 
-    def _create_text_texture(self, text, font_size=32, color=(1, 1, 1)):
-        """Create a texture containing the given text"""
-        # Use larger base font size and padding
-        base_font_size = 128  # Increased from 32
-        padding = base_font_size // 2
+    def _create_text_texture(self, text, font_size=256, color=(1, 1, 1), font_path=None):
+        """Create a texture containing the given text with higher resolution"""
+        # Increased base font size significantly
+        base_font_size = font_size  # Was 128, now 256
+        padding = base_font_size // 4  # Reduced relative padding
         
-        # Estimate text size and create image with proper aspect ratio
-        try:
-            font = PIL.ImageFont.truetype("arial.ttf", base_font_size)
-        except:
-            font = PIL.ImageFont.load_default()
-            
+        # Create font (with error handling for missing fonts)
+        font = None
+        if font_path is not None:
+            try:
+                font = PIL.ImageFont.truetype(font_path, base_font_size)
+            except OSError:
+                print( "Warning: Couldn't open font path:", font_path )
+        if font is None:
+            try:
+                from pathlib import Path
+                font = PIL.ImageFont.truetype( Path( __file__ ).parent / "fonts" / "DejaVuSerif.ttf", base_font_size)
+            except OSError:
+                font = PIL.ImageFont.load_default()
+                print("Warning: Using default font, text may appear pixelated")
+        
         # Get text size for proper aspect ratio
+        # Use getbbox for more accurate text bounds
         bbox = font.getbbox(text)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
-        # Create image with proper aspect ratio
+        # Create image with proper aspect ratio and power-of-two dimensions
+        # Add extra padding to prevent text from touching edges
         img_width = text_width + padding * 2
         img_height = text_height + padding * 2
+        
+        # Round up to nearest power of 2 for better texture performance
+        def next_power_of_2(x):
+            return 1 if x == 0 else 2**(x - 1).bit_length()
+        
+        #img_width = next_power_of_2(img_width)
+        #img_height = next_power_of_2(img_height)
+        
+        # Create image with alpha channel
         image = PIL.Image.new('RGBA', (img_width, img_height), (0, 0, 0, 0))
         draw = PIL.ImageDraw.Draw(image)
         
@@ -137,12 +160,12 @@ class GLTFGeometryExporter:
             "uri": f"data:image/png;base64,{base64.b64encode(png_bytes).decode('ascii')}"
         })
         
-        # Add sampler
+        # Add sampler with linear filtering for better quality
         self.gltf.samplers.append({
-            "magFilter": 9729,  # LINEAR
-            "minFilter": 9729,  # LINEAR
-            "wrapS": 33071,    # CLAMP_TO_EDGE
-            "wrapT": 33071     # CLAMP_TO_EDGE
+            "magFilter": LINEAR,
+            "minFilter": LINEAR_MIPMAP_LINEAR,
+            "wrapS": CLAMP_TO_EDGE,
+            "wrapT": CLAMP_TO_EDGE
         })
         
         # Add texture
@@ -269,12 +292,12 @@ class GLTFGeometryExporter:
         
         return self.add_lines(vertices, edges, color)
 
-    def add_text(self, position, text, size=1.0, color=None):
-        """Add 3D text at the specified position"""
+    def add_text(self, position, text, size=1.0, color=None, font_path=None):
+        """Add 3D text at the specified position with improved size handling"""
         position = np.array(position, dtype=np.float32)
         
         # Create texture first to get aspect ratio
-        texture_index = self._create_text_texture(text, color=color or (1, 1, 1))
+        texture_index = self._create_text_texture(text, color=color or (1, 1, 1), font_path=font_path)
         
         # Get image aspect ratio
         img = PIL.Image.open(io.BytesIO(base64.b64decode(
@@ -283,8 +306,10 @@ class GLTFGeometryExporter:
         aspect_ratio = img.width / img.height
         
         # Create billboard quad vertices with proper aspect ratio
+        # Increased base size significantly
         half_height = size / 2
         half_width = half_height * aspect_ratio
+        
         vertices = np.array([
             [position[0] - half_width, position[1] - half_height, position[2]],
             [position[0] + half_width, position[1] - half_height, position[2]],
