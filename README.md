@@ -2,19 +2,18 @@
 
 A [Claude](https://claude.ai)-created Python module to save different types of geometry to `glTF`. You can view the result in any GLTF viewer, such as:
 
+- [The `<model-viewer>` tag](<https://modelviewer.dev>)
 - Online viewers like <https://gltf-viewer.donmccurdy.com/>
-- Three.js-based web viewers
-- The Blender 3D editor
-- Microsoft's Windows 3D Viewer
+- [Three.js](https://threejs.org)-based web viewers
+- [Blender](http://blender.org)
 
 Key features:
 
-1. Supports multiple geometry types: triangles, lines, points, and normals
+1. Supports multiple geometry types: triangles, lines, points, normals, and text
 2. Automatic color generation using the golden ratio for visually distinct colors
 3. Optional manual color specification
 4. All geometries are combined into a single GLTF file
 5. Proper material setup with metallic-roughness PBR workflow
-6. Text anchored at a point in space.
 
 Here's how to use it:
 
@@ -41,6 +40,32 @@ line_vertices = [
 edges = [[0, 1]]
 exporter.add_lines(line_vertices, edges)  # Auto-generated color
 
+# Create a square as a line strip
+points = [
+    [0,0,0],
+    [1,0,0],
+    [1,1,0],
+    [0,1,0]
+]
+exporter.add_linestrip(points, color=(1,0,0))  # Creates a line strip
+# The same but as cylinders with sphere mitering and endcaps
+exporter.add_cylinder_strips(points, color=(1,0,0), radius=0.03, add_spheres=True)
+
+# Add labels for some points
+exporter.add_text([0, 0, 0.1], "Origin", size=0.2, color=(1, 1, 1))  # White text
+exporter.add_text([1, 1, 1.1], "Point 2", size=0.3)  # Auto-colored text
+
+# Or for a curve
+t = np.linspace(0, 2*np.pi, 50)
+curve_points = np.column_stack([
+    np.cos(t),
+    np.sin(t),
+    np.zeros_like(t)
+])
+exporter.add_linestrip(curve_points, color=(0,1,0))  # Creates a smooth curve
+# The same but as cylinders with sphere mitering and endcaps
+exporter.add_cylinder_strips(curve_points, color=(0,1,0), radius=0.03, add_spheres=True)
+
 # Add points
 points = [
     [0, 0, 0],
@@ -48,11 +73,18 @@ points = [
     [0, 1, 0]
 ]
 exporter.add_points(points, color=(0, 1, 0))  # Green points
+# The same but as spheres
+exporter.add_spheres(points, color=(0, 1, 0))  # Green points
 
 # Add normals
 normal_points = [[0, 0, 0]]
 normal_directions = [[0, 0, 1]]
 exporter.add_normals(normal_points, normal_directions, color=(0, 0, 1))  # Blue normals
+# The same but as cylinders with cone caps
+exporter.add_normal_arrows(
+            normal_points, normal_directions, color=(0, 0, 1),
+            shaft_radius=0.02, head_radius=0.04
+        )
 
 # Save the file
 exporter.save("output.gltf")
@@ -95,3 +127,5 @@ This demo file showcases:
    - Coordinate axes
 
 The scene includes a variety of objects arranged in a way that makes it easy to see all the features.
+
+![All the things the demo file showcases](demo_scene.png "demo_scene.gltf")

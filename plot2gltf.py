@@ -22,7 +22,22 @@ from pygltflib.validator import (
 )
 
 class GLTFGeometryExporter:
+    """
+    A class for creating GLTF files with various geometric primitives and 3D text labels.
+    
+    This exporter supports:
+    - Triangle meshes
+    - Line segments
+    - Points (as dots or spheres)
+    - Normal vectors (as lines or arrows)
+    - 3D text labels
+    - Cylinder strips
+    
+    All geometry can be colored with either lit (shaded) or unlit (constant color) materials.
+    """
+    
     def __init__(self):
+        """Initialize a new GLTF geometry exporter."""
         self.gltf = GLTF2()
         self.gltf.scenes = [Scene(nodes=[0])]
         self.gltf.nodes = [Node(mesh=0)]
@@ -198,7 +213,23 @@ class GLTFGeometryExporter:
         return len(self.gltf.textures) - 1
 
     def add_triangles(self, vertices, faces, color=None, unlit=False):
-        """Add triangle mesh to the GLTF file"""
+        """
+        Add triangle mesh to the GLTF file.
+        
+        Parameters:
+            vertices: list of [x,y,z] coordinates defining the mesh vertices
+            faces: list of [i,j,k] indices defining triangles (3 vertices per face)
+            color: optional (r,g,b) color tuple. If None, a unique color will be generated
+            unlit: if True, creates constant-color geometry; if False, uses lit materials (default: False)
+        
+        Returns:
+            tuple: (vertices array, faces array) of the added geometry
+        
+        Example:
+            vertices = [[0,0,0], [1,0,0], [0,1,0]]
+            faces = [[0,1,2]]
+            exporter.add_triangles(vertices, faces, color=(1,0,0))  # Red triangle
+        """
         vertices = np.array(vertices, dtype=np.float32)
         faces = np.array(faces, dtype=np.uint32).flatten()  # Flatten for indices
         
@@ -237,8 +268,50 @@ class GLTFGeometryExporter:
         self.gltf.meshes[0].primitives.append(primitive)
         return vertices, faces
 
+    def add_linestrip(self, points, color=None):
+        """
+        Add a continuous line strip connecting consecutive points.
+        
+        Parameters:
+            points: list of [x,y,z] coordinates defining the vertices of the line strip
+            color: optional (r,g,b) color tuple. If None, a unique color will be generated
+        
+        Returns:
+            tuple: (vertices array, edges array) of the added geometry
+        
+        Notes:
+            Creates a sequence of connected line segments where each point is connected
+            to the next point in the sequence.
+        
+        Example:
+            points = [[0,0,0], [1,1,0], [2,1,0], [2,2,0]]
+            exporter.add_linestrip(points, color=(1,0,0))  # Red connected line
+        """
+        if len(points) < 2:
+            return None
+        
+        # Create edges connecting consecutive points
+        edges = [[i, i+1] for i in range(len(points)-1)]
+        
+        return self.add_lines(points, edges, color)
+    
     def add_lines(self, vertices, edges, color=None):
-        """Add lines to the GLTF file"""
+        """
+        Add line segments to the GLTF file.
+        
+        Parameters:
+            vertices: list of [x,y,z] coordinates defining the line endpoints
+            edges: list of [i,j] indices defining lines (2 vertices per line)
+            color: optional (r,g,b) color tuple. If None, a unique color will be generated
+        
+        Returns:
+            tuple: (vertices array, edges array) of the added geometry
+        
+        Example:
+            vertices = [[0,0,0], [1,1,1]]
+            edges = [[0,1]]
+            exporter.add_lines(vertices, edges, color=(0,1,0))  # Green line
+        """
         vertices = np.array(vertices, dtype=np.float32)
         edges = np.array(edges, dtype=np.uint32).flatten()
         
@@ -261,7 +334,7 @@ class GLTFGeometryExporter:
             "SCALAR"
         )
         
-        material_idx = self._create_material(color)
+        material_idx = self._create_material(color, unlit=True)
         
         primitive = Primitive(
             attributes={"POSITION": vertex_accessor_idx},
@@ -274,7 +347,20 @@ class GLTFGeometryExporter:
         return vertices, edges
 
     def add_points(self, vertices, color=None):
-        """Add points to the GLTF file"""
+        """
+        Add points to the GLTF file as simple dots.
+        
+        Parameters:
+            vertices: list of [x,y,z] coordinates defining point positions
+            color: optional (r,g,b) color tuple. If None, a unique color will be generated
+        
+        Returns:
+            array: vertices array of the added points
+        
+        Example:
+            points = [[0,0,0], [1,1,1], [2,2,2]]
+            exporter.add_points(points, color=(0,0,1))  # Blue points
+        """
         vertices = np.array(vertices, dtype=np.float32)
         
         vertex_view_idx = self._create_buffer_view(vertices, ARRAY_BUFFER)
@@ -288,7 +374,7 @@ class GLTFGeometryExporter:
             vertices.max(axis=0).tolist()
         )
         
-        material_idx = self._create_material(color)
+        material_idx = self._create_material(color, unlit=True)
         
         primitive = Primitive(
             attributes={"POSITION": vertex_accessor_idx},
@@ -300,7 +386,22 @@ class GLTFGeometryExporter:
         return vertices
 
     def add_normals(self, points, directions, color=None):
-        """Add normal vectors to the GLTF file as lines"""
+        """
+        Add normal vectors as lines.
+        
+        Parameters:
+            points: list of [x,y,z] coordinates for arrow start points
+            directions: list of [dx,dy,dz] vectors defining arrow directions
+            color: optional (r,g,b) color tuple. If None, a unique color will be generated
+        
+        Returns:
+            tuple: (vertices array, indices array) of the added geometry
+        
+        Example:
+            points = [[0,0,0]]
+            directions = [[0,0,1]]  # Points up in Z direction
+            exporter.add_normal_arrows(points, directions, color=(1,0,1))  # Purple line
+        """
         points = np.array(points, dtype=np.float32)
         directions = np.array(directions, dtype=np.float32)
         
@@ -314,7 +415,25 @@ class GLTFGeometryExporter:
         return self.add_lines(vertices, edges, color)
 
     def add_text(self, position, text, size=1.0, color=None, font_path=None):
-        """Add 3D text at the specified position with improved size handling"""
+        """
+        Add 3D text at the specified position.
+        
+        Parameters:
+            position: [x,y,z] coordinate for text position
+            text: string to display
+            size: height of the text in world units (default: 1.0)
+            color: optional (r,g,b) color tuple. If None, a unique color will be generated
+            font_path: optional path to a font file that Freetype can open.
+        
+        Returns:
+            tuple: (vertices array, indices array) of the added geometry
+        
+        Notes:
+            - Uses high-resolution textures for clear rendering
+        
+        Example:
+            exporter.add_text([0,2,0], "Hello World", size=0.5, color=(1,1,1))  # White text
+        """
         position = np.array(position, dtype=np.float32)
         
         # Create texture first to get aspect ratio
@@ -381,7 +500,7 @@ class GLTFGeometryExporter:
         )
         
         # Create material with texture
-        material_idx = self._create_material(color, texture_index)
+        material_idx = self._create_material(color, texture_index, unlit=True)
         
         # Create primitive
         primitive = Primitive(
@@ -510,7 +629,23 @@ class GLTFGeometryExporter:
         return np.array(vertices, dtype=np.float32), np.array(indices, dtype=np.uint32)
     
     def add_spheres(self, centers, radius=0.1, color=None, segments=16, unlit=True):
-        """Add spheres at the given center points"""
+        """
+        Add spheres to the GLTF file at specified center points.
+        
+        Parameters:
+            centers: list of [x,y,z] coordinates for sphere centers
+            radius: radius of the spheres (default: 0.1)
+            color: optional (r,g,b) color tuple. If None, a unique color will be generated
+            segments: number of segments for sphere mesh (default: 16)
+            unlit: if True, creates constant-color spheres; if False, uses lit materials (default: True)
+        
+        Returns:
+            tuple: (vertices array, indices array) of the added geometry
+        
+        Example:
+            centers = [[0,0,0], [1,1,1]]
+            exporter.add_spheres(centers, radius=0.2, color=(1,0,0))  # Red spheres
+        """
         sphere_verts, sphere_indices = self._create_sphere_mesh(radius, segments)
         all_vertices = []
         all_indices = []
@@ -532,14 +667,22 @@ class GLTFGeometryExporter:
     
     def add_cylinder_strips(self, points, radius=0.05, color=None, segments=16, add_spheres=True, unlit=True):
         """
-        Add connected cylinders between consecutive points with optional sphere joints
+        Add connected cylinders between consecutive points.
         
         Parameters:
-            points: list of [x,y,z] coordinates
-            radius: radius of cylinders and spheres
-            color: (r,g,b) color tuple
-            segments: number of segments for cylinders and spheres
-            add_spheres: whether to add spheres at joints
+            points: list of [x,y,z] coordinates defining the cylinder path
+            radius: radius of the cylinders (default: 0.05)
+            color: optional (r,g,b) color tuple. If None, a unique color will be generated
+            segments: number of segments for cylinder cross-section (default: 16)
+            add_spheres: if True, adds spheres at joints for smooth connections (default: True)
+            unlit: if True, creates constant-color geometry; if False, uses lit materials (default: True)
+        
+        Returns:
+            tuple: (vertices array, indices array) of the added geometry
+        
+        Example:
+            points = [[0,0,0], [1,1,0], [2,1,0]]
+            exporter.add_cylinder_strips(points, radius=0.1, color=(0,1,0))  # Green tube
         """
         if len(points) < 2:
             return
@@ -600,8 +743,28 @@ class GLTFGeometryExporter:
             self.add_spheres(points, radius=radius, color=color, segments=segments, unlit=unlit)
     
     def add_normal_arrows(self, points, directions, shaft_radius=0.02, head_radius=0.04, 
-                         head_length_ratio=0.25, color=None, segments=16):
-        """Add normal vectors as cylinders with cone tips"""
+                         head_length_ratio=0.25, color=None, segments=16, unlit=True):
+        """
+        Add normal vectors as cylinders with cone tips.
+        
+        Parameters:
+            points: list of [x,y,z] coordinates for arrow start points
+            directions: list of [dx,dy,dz] vectors defining arrow directions
+            shaft_radius: radius of the cylinder shaft (default: 0.02)
+            head_radius: radius of the cone tip (default: 0.04)
+            head_length_ratio: ratio of cone length to total length (default: 0.25)
+            color: optional (r,g,b) color tuple. If None, a unique color will be generated
+            segments: number of segments for cylinder/cone cross-sections (default: 16)
+            unlit: if True, creates constant-color geometry; if False, uses lit materials (default: True)
+        
+        Returns:
+            tuple: (vertices array, indices array) of the added geometry
+        
+        Example:
+            points = [[0,0,0]]
+            directions = [[0,0,1]]  # Points up in Z direction
+            exporter.add_normal_arrows(points, directions, color=(1,0,1))  # Purple arrow
+        """
         all_vertices = []
         all_indices = []
         
@@ -654,10 +817,18 @@ class GLTFGeometryExporter:
             all_vertices.extend(transformed_head)
             all_indices.extend(head_indices + base_index)
         
-        return self.add_triangles(all_vertices, np.array(all_indices).reshape(-1, 3), color)
+        return self.add_triangles(all_vertices, np.array(all_indices).reshape(-1, 3), color, unlit=unlit)
 
     def save(self, filename):
-        """Save the GLTF file"""
+        """
+        Save the GLTF file to disk.
+        
+        Parameters:
+            filename: output filename (should end in .gltf)
+        
+        Example:
+            exporter.save("output.gltf")
+        """
         # Create the final buffer
         self.gltf.buffers = [Buffer(
             byteLength=len(self.all_data),
