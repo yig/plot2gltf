@@ -134,15 +134,31 @@ class GLTFDemo:
         self.exporter.add_text([1.3, 2.8, 0], "Sphere Grid", size=0.2, color=(1, 0.5, 0))
 
     def demo_cylinder_strip(self):
-        """Demonstrate cylinder strips"""
-        t = np.linspace(0, 2*np.pi, 20)
-        curve_points = np.column_stack([
+        """Demonstrate cylinder strips with different configurations"""
+        # Create a helix curve for more interesting demonstration
+        t = np.linspace(0, 4*np.pi, 40)
+        helix_points = np.column_stack([
             2 + 0.5*np.cos(t),
             0.5*np.sin(t),
-            np.zeros_like(t)
+            0.3*t
         ])
-        self.exporter.add_cylinder_strips(curve_points, radius=0.03, color=(0, 0.8, 0.8))
-        self.exporter.add_text([2, 1, 0], "Cylinder Strip", size=0.3)
+        
+        # Create three examples side by side
+        # 1. Basic cylinder strip without spheres
+        points1 = helix_points + [-2, 0, 0]  # Shifted left
+        self.exporter.add_cylinder_strips(points1, radius=0.03, color=(0, 0.8, 0.8), 
+                                        add_spheres=False)
+        self.exporter.add_text([-2, 1, 0], "Without Spheres", size=0.3)
+        
+        # 2. Cylinder strip with spheres
+        points2 = helix_points.copy()  # Center
+        self.exporter.add_cylinder_strips(points2, radius=0.03, color=(0.8, 0.4, 0))
+        self.exporter.add_text([2, 1, 0], "With Spheres", size=0.3)
+        
+        # 3. Thicker version
+        points3 = helix_points + [2, 0, 0]  # Shifted right
+        self.exporter.add_cylinder_strips(points3, radius=0.05, color=(0.4, 0.8, 0))
+        self.exporter.add_text([4, 1, 0], "Thicker", size=0.3)
 
     def demo_normal_arrows(self):
         """Demonstrate normal arrows"""

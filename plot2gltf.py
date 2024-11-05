@@ -484,14 +484,24 @@ class GLTFGeometryExporter:
         
         return self.add_triangles(all_vertices, all_indices, color)
     
-    def add_cylinder_strips(self, points, radius=0.05, color=None, segments=16):
-        """Add connected cylinders between consecutive points"""
+    def add_cylinder_strips(self, points, radius=0.05, color=None, segments=16, add_spheres=True):
+        """
+        Add connected cylinders between consecutive points with optional sphere joints
+        
+        Parameters:
+            points: list of [x,y,z] coordinates
+            radius: radius of cylinders and spheres
+            color: (r,g,b) color tuple
+            segments: number of segments for cylinders and spheres
+            add_spheres: whether to add spheres at joints
+        """
         if len(points) < 2:
             return
         
         all_vertices = []
         all_indices = []
         
+        # First create all cylinders
         for i in range(len(points) - 1):
             start = np.array(points[i])
             end = np.array(points[i + 1])
@@ -532,7 +542,16 @@ class GLTFGeometryExporter:
             all_vertices.extend(transformed_verts)
             all_indices.extend(cyl_indices + base_index)
         
-        return self.add_triangles(all_vertices, np.array(all_indices).reshape(-1, 3), color)
+        # Create initial mesh with cylinders
+        vertices = np.array(all_vertices, dtype=np.float32)
+        indices = np.array(all_indices, dtype=np.uint32).reshape(-1, 3)
+        
+        # Add cylindrical segments
+        self.add_triangles(vertices, indices, color)
+        
+        # Add spheres at each joint if requested
+        if add_spheres:
+            self.add_spheres(points, radius=radius, color=color, segments=segments)
     
     def add_normal_arrows(self, points, directions, shaft_radius=0.02, head_radius=0.04, 
                          head_length_ratio=0.25, color=None, segments=16):
