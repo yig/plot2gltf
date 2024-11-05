@@ -99,9 +99,11 @@ exporter.save("output.gltf")
 
 ## Installation
 
-Copy `plot2gltf.py` and `fonts` into your python.
+```
+pip install plot2gltf
+```
 
-Install dependencies via:
+If you want to hack on it, you can just copy the `plot2gltf` directory and install dependencies via:
 
 ```
 pip install -r requirements.txt
