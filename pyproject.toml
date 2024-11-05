@@ -16,9 +16,3 @@ dependencies = [
 
 [project.urls]
 Home = "https://github.com/yig/plot2gltf"
-
-[project.optional-dependencies]
-test = [
-    "numpy",
-    "polyscope",
-]
