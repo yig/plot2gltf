@@ -1,6 +1,6 @@
 """A module for creating GLTF files with various geometric primitives and 3D text labels."""
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 import numpy as np
 from pygltflib import GLTF2, Buffer, BufferView, Accessor, Mesh, Primitive, Node, Scene, Material
@@ -132,10 +132,6 @@ class GLTFGeometryExporter:
             material["extensions"] = {
                 "KHR_materials_unlit": {}
             }
-            if "extensions" not in self.gltf.extensions:
-                self.gltf.extensions = []
-            if "KHR_materials_unlit" not in self.gltf.extensions:
-                self.gltf.extensions.append("KHR_materials_unlit")
             if not hasattr(self.gltf, 'extensionsUsed'):
                 self.gltf.extensionsUsed = []
             if "KHR_materials_unlit" not in self.gltf.extensionsUsed:
