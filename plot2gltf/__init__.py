@@ -1,6 +1,6 @@
 """A module for creating GLTF files with various geometric primitives and 3D text labels."""
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 import numpy as np
 from pygltflib import GLTF2, Buffer, BufferView, Accessor, Mesh, Primitive, Node, Scene, Material
@@ -42,9 +42,9 @@ class GLTFGeometryExporter:
     def __init__(self):
         """Initialize a new GLTF geometry exporter."""
         self.gltf = GLTF2()
-        self.gltf.scenes = [Scene(nodes=[0])]
-        self.gltf.nodes = [Node(mesh=0)]
-        self.gltf.meshes = [Mesh(primitives=[])]
+        self.gltf.scenes = [Scene(nodes=[])]
+        self.gltf.nodes = []
+        self.gltf.meshes = []
         self.gltf.materials = []
         self.gltf.buffers = []
         self.gltf.bufferViews = []
@@ -54,8 +54,14 @@ class GLTFGeometryExporter:
         self.gltf.samplers = []
         
         self.color_index = 0
-        self.buffer_offset = 0
         self.all_data = bytearray()
+        
+        # Cache for unit-sized primitive meshes
+        self._mesh_cache = {
+            'sphere': {},    # segments -> mesh_index
+            'cylinder': {},  # segments -> mesh_index
+            'cone': {}      # segments -> mesh_index
+        }
     
     def _get_unique_color(self):
         """Generate a unique color using HSV color space"""
@@ -139,7 +145,243 @@ class GLTFGeometryExporter:
         mat = Material(**material)
         self.gltf.materials.append(mat)
         return len(self.gltf.materials) - 1
-
+    
+    def _create_node(self, mesh_index, translation=None, rotation=None, scale=None):
+        """Create a node with transformation and mesh reference"""
+        node = Node(mesh=mesh_index)
+        
+        if translation is not None:
+            node.translation = list(translation)
+        if rotation is not None:
+            node.rotation = list(rotation)
+        if scale is not None:
+            node.scale = list(scale)
+        
+        self.gltf.nodes.append(node)
+        node_index = len(self.gltf.nodes) - 1
+        self.gltf.scenes[0].nodes.append(node_index)
+        return node_index
+    
+    def _create_primitive_geometry(self, material_index, vertices, indices, normals=None):
+        """
+        Create buffer views, accessors, and a mesh primitive from geometry data.
+        """
+        # Create buffer views
+        vertex_view_idx = self._create_buffer_view(vertices, ARRAY_BUFFER)
+        if normals is not None: normal_view_idx = self._create_buffer_view(normals, ARRAY_BUFFER)
+        index_view_idx = self._create_buffer_view(indices, ELEMENT_ARRAY_BUFFER)
+        
+        # Create accessors
+        vertex_accessor_idx = self._create_accessor(
+            vertex_view_idx, 
+            FLOAT, 
+            len(vertices), 
+            "VEC3",
+            vertices.min(axis=0).tolist(),
+            vertices.max(axis=0).tolist()
+        )
+        
+        index_accessor_idx = self._create_accessor(
+            index_view_idx, 
+            UNSIGNED_INT, 
+            len(indices), 
+            "SCALAR"
+        )
+        
+        if normals is not None:
+            normal_accessor_idx = self._create_accessor(
+                normal_view_idx, 
+                FLOAT, 
+                len(normals), 
+                "VEC3",
+                [-1, -1, -1],
+                [1, 1, 1]
+            )
+        
+        # Create primitive
+        primitive = Primitive(
+            attributes={
+                "POSITION": vertex_accessor_idx
+            },
+            indices=index_accessor_idx,
+            material=material_index,
+            mode=TRIANGLES
+        )
+        if normals is not None: primitive.attributes["NORMAL"] = normal_accessor_idx
+        
+        # Create mesh with the primitive
+        mesh = Mesh(primitives=[primitive])
+        self.gltf.meshes.append(mesh)
+        return len(self.gltf.meshes) - 1
+    
+    def _clone_mesh_with_material(self, template_mesh_index, material_index ):
+        """
+        Clone a mesh with new material but reuse its geometry accessors.
+        """
+        template_mesh = self.gltf.meshes[template_mesh_index]
+        template_primitive = template_mesh.primitives[0]
+        
+        # Create new primitive reusing geometry accessors
+        new_primitive = Primitive(
+            attributes=template_primitive.attributes.copy(),
+            indices=template_primitive.indices,
+            material=material_index,
+            mode=template_primitive.mode
+        )
+        
+        # Create new mesh with the primitive
+        new_mesh = Mesh(primitives=[new_primitive])
+        self.gltf.meshes.append(new_mesh)
+        return len(self.gltf.meshes) - 1
+    
+    def _create_sphere_mesh(self, segments=16):
+        """Create a unit sphere mesh centered at origin"""
+        vertices = []
+        normals = []
+        indices = []
+        
+        # Create vertices and normals
+        for phi in np.linspace(0, np.pi, segments):
+            for theta in np.linspace(0, 2*np.pi, segments):
+                x = np.sin(phi) * np.cos(theta)
+                y = np.sin(phi) * np.sin(theta)
+                z = np.cos(phi)
+                vertices.append([x, y, z])
+                normals.append([x, y, z])  # For sphere, normal is same as position
+        
+        # Create triangles
+        for i in range(segments - 1):
+            for j in range(segments - 1):
+                current = i * segments + j
+                next_h = current + 1
+                next_v = (i + 1) * segments + j
+                next_vh = next_v + 1
+                indices.extend([current, next_h, next_v])
+                indices.extend([next_h, next_vh, next_v])
+        
+        # Close the gaps
+        for i in range(segments - 1):
+            current = i * segments + (segments - 1)
+            next_v = (i + 1) * segments + (segments - 1)
+            first_in_row = i * segments
+            first_next_row = (i + 1) * segments
+            indices.extend([current, first_in_row, next_v])
+            indices.extend([first_in_row, first_next_row, next_v])
+        
+        return (np.array(vertices, dtype=np.float32),
+                np.array(normals, dtype=np.float32),
+                np.array(indices, dtype=np.uint32))
+    
+    def _create_cylinder_mesh(self, segments=16):
+        """Create a unit cylinder mesh (radius=1.0, height=1.0)"""
+        vertices = []
+        normals = []
+        indices = []
+        
+        # Create circles of vertices for top and bottom
+        for y in [-0.5, 0.5]:
+            for i in range(segments):
+                angle = 2 * np.pi * i / segments
+                x = np.cos(angle)
+                z = np.sin(angle)
+                vertices.append([x, y, z])
+                normals.append([x, 0, z])  # Side normal
+        
+        # Create side triangles
+        for i in range(segments):
+            i1 = i
+            i2 = (i + 1) % segments
+            i3 = i + segments
+            i4 = ((i + 1) % segments) + segments
+            indices.extend([i1, i2, i3])
+            indices.extend([i2, i4, i3])
+        
+        # Add end caps
+        center_bottom = len(vertices)
+        vertices.append([0, -0.5, 0])
+        normals.append([0, -1, 0])
+        
+        center_top = len(vertices)
+        vertices.append([0, 0.5, 0])
+        normals.append([0, 1, 0])
+        
+        # Add cap vertices
+        for i in range(segments):
+            angle = 2 * np.pi * i / segments
+            x = np.cos(angle)
+            z = np.sin(angle)
+            
+            # Bottom cap
+            vertices.append([x, -0.5, z])
+            normals.append([0, -1, 0])
+            
+            # Top cap
+            vertices.append([x, 0.5, z])
+            normals.append([0, 1, 0])
+        
+        # Add cap triangles
+        bottom_start = center_top + 1
+        top_start = bottom_start + segments
+        
+        for i in range(segments):
+            next_i = (i + 1) % segments
+            indices.extend([
+                center_bottom,
+                bottom_start + next_i,
+                bottom_start + i
+            ])
+            indices.extend([
+                center_top,
+                top_start + i,
+                top_start + next_i
+            ])
+        
+        return (np.array(vertices, dtype=np.float32),
+                np.array(normals, dtype=np.float32),
+                np.array(indices, dtype=np.uint32))
+    
+    def _create_cone_mesh(self, segments=16):
+        """Create a unit cone mesh (radius=1.0, height=1.0)"""
+        vertices = []
+        normals = []
+        indices = []
+        
+        # Create base vertices
+        for i in range(segments):
+            angle = 2 * np.pi * i / segments
+            x = np.cos(angle)
+            z = np.sin(angle)
+            vertices.append([x, -0.5, z])
+            
+            # Calculate normal for side
+            normal = np.array([x, 0.5, z])
+            normal = normal / np.linalg.norm(normal)
+            normals.append(normal)
+        
+        # Add tip
+        tip_index = len(vertices)
+        vertices.append([0, 0.5, 0])
+        normals.append([0, 1, 0])
+        
+        # Add base center
+        base_center = len(vertices)
+        vertices.append([0, -0.5, 0])
+        normals.append([0, -1, 0])
+        
+        # Create side triangles
+        for i in range(segments):
+            next_i = (i + 1) % segments
+            indices.extend([i, next_i, tip_index])
+        
+        # Create base triangles
+        for i in range(segments):
+            next_i = (i + 1) % segments
+            indices.extend([base_center, next_i, i])
+        
+        return (np.array(vertices, dtype=np.float32),
+                np.array(normals, dtype=np.float32),
+                np.array(indices, dtype=np.uint32))
+    
     def _create_text_texture(self, text, font_size=256, color=(1, 1, 1), font_path=None):
         """Create a texture containing the given text with higher resolution"""
         # Increased base font size significantly
@@ -215,13 +457,14 @@ class GLTFGeometryExporter:
         
         return len(self.gltf.textures) - 1
 
-    def add_triangles(self, vertices, faces, color=None, unlit=False):
+    def add_triangles(self, vertices, faces, normals=None, color=None, unlit=False):
         """
         Add triangle mesh to the GLTF file.
         
         Parameters:
             vertices: list of [x,y,z] coordinates defining the mesh vertices
             faces: list of [i,j,k] indices defining triangles (3 vertices per face)
+            normals: optional [x,y,z] normals for each vertex. If unspecified, flat shading is used.
             color: optional (r,g,b) color tuple. If None, a unique color will be generated
             unlit: if True, creates constant-color geometry; if False, uses lit materials (default: False)
         
@@ -234,42 +477,36 @@ class GLTFGeometryExporter:
             exporter.add_triangles(vertices, faces, color=(1,0,0))  # Red triangle
         """
         vertices = np.array(vertices, dtype=np.float32)
-        faces = np.array(faces, dtype=np.uint32).flatten()  # Flatten for indices
+        indices = np.array(faces, dtype=np.uint32).flatten()
+        if normals is not None: normals = np.array(normals, dtype=np.float32)
         
-        # Create buffer views
-        vertex_view_idx = self._create_buffer_view(vertices, ARRAY_BUFFER)
-        index_view_idx = self._create_buffer_view(faces, ELEMENT_ARRAY_BUFFER)
+        '''
+        # Calculate face normals for flat shading
+        v0 = vertices[faces[:,0]]
+        v1 = vertices[faces[:,1]]
+        v2 = vertices[faces[:,2]]
+        normals = np.cross(v1 - v0, v2 - v0)
+        normals = normals / np.linalg.norm(normals, axis=1)[:,None]
         
-        # Create accessors
-        vertex_accessor_idx = self._create_accessor(
-            vertex_view_idx,
-            FLOAT,
-            len(vertices),
-            "VEC3",
-            vertices.min(axis=0).tolist(),
-            vertices.max(axis=0).tolist()
-        )
+        # Duplicate vertices for flat shading
+        flat_vertices = np.vstack([v0, v1, v2])
+        flat_normals = np.repeat(normals, 3, axis=0)
+        flat_indices = np.arange(len(flat_vertices), dtype=np.uint32)
         
-        index_accessor_idx = self._create_accessor(
-            index_view_idx,
-            UNSIGNED_INT,
-            len(faces),
-            "SCALAR"
-        )
+        mesh_index = self._create_primitive_geometry(
+            flat_vertices, flat_normals, flat_indices, color, unlit)
+        '''
         
-        # Create material
-        material_idx = self._create_material(color, unlit=unlit)
+        mesh_index = self._create_primitive_geometry(
+            self._create_material(color, unlit=unlit),
+            vertices, indices, normals=normals
+            )
         
-        # Create primitive
-        primitive = Primitive(
-            attributes={"POSITION": vertex_accessor_idx},
-            indices=index_accessor_idx,
-            material=material_idx,
-            mode=TRIANGLES
-        )
+        # Create single node without transformation
+        self._create_node(mesh_index)
         
-        self.gltf.meshes[0].primitives.append(primitive)
-        return vertices, faces
+        return mesh_index
+
 
     def add_linestrip(self, points, color=None):
         """
@@ -519,118 +756,6 @@ class GLTFGeometryExporter:
         self.gltf.meshes[0].primitives.append(primitive)
         return vertices, indices
     
-    def _create_sphere_mesh(self, radius=1.0, segments=16):
-        """Create a sphere mesh centered at origin"""
-        vertices = []
-        indices = []
-        
-        # Create vertices
-        for phi in np.linspace(0, np.pi, segments):  # vertical angle
-            for theta in np.linspace(0, 2*np.pi, segments):  # horizontal angle
-                # Convert spherical coordinates to cartesian
-                x = radius * np.sin(phi) * np.cos(theta)
-                y = radius * np.sin(phi) * np.sin(theta)
-                z = radius * np.cos(phi)
-                vertices.append([x, y, z])
-        
-        # Create triangles
-        for i in range(segments - 1):  # vertical
-            for j in range(segments - 1):  # horizontal
-                # Current vertex
-                current = i * segments + j
-                # Next vertex in same row
-                next_h = current + 1
-                # Vertex in next row
-                next_v = (i + 1) * segments + j
-                # Next vertex in next row
-                next_vh = next_v + 1
-                
-                # Add two triangles for each quad
-                indices.extend([current, next_h, next_v])
-                indices.extend([next_h, next_vh, next_v])
-        
-        # Close the gap in the last column
-        for i in range(segments - 1):
-            current = i * segments + (segments - 1)
-            next_v = (i + 1) * segments + (segments - 1)
-            first_in_row = i * segments
-            first_next_row = (i + 1) * segments
-            
-            indices.extend([current, first_in_row, next_v])
-            indices.extend([first_in_row, first_next_row, next_v])
-        
-        vertices = np.array(vertices, dtype=np.float32)
-        indices = np.array(indices, dtype=np.uint32)
-        return vertices, indices
-    
-    def _create_cylinder_mesh(self, radius=1.0, height=1.0, segments=16):
-        """Create a cylinder mesh centered at origin, extending along Y axis"""
-        vertices = []
-        indices = []
-        
-        # Create circles of vertices for top and bottom
-        for y in [-height/2, height/2]:
-            for i in range(segments):
-                angle = 2 * np.pi * float(i) / segments
-                x = np.cos(angle) * radius
-                z = np.sin(angle) * radius
-                vertices.append([x, y, z])
-        
-        # Create triangles for the sides
-        for i in range(segments):
-            i1 = i
-            i2 = (i + 1) % segments
-            i3 = i + segments
-            i4 = ((i + 1) % segments) + segments
-            
-            indices.extend([i1, i2, i3])
-            indices.extend([i2, i4, i3])
-        
-        # Add end caps
-        center_bottom = len(vertices)
-        vertices.append([0, -height/2, 0])
-        center_top = len(vertices)
-        vertices.append([0, height/2, 0])
-        
-        for i in range(segments):
-            next_i = (i + 1) % segments
-            # Bottom cap
-            indices.extend([center_bottom, i, next_i])
-            # Top cap
-            indices.extend([center_top, i + segments, (next_i) + segments])
-        
-        return np.array(vertices, dtype=np.float32), np.array(indices, dtype=np.uint32)
-    
-    def _create_cone_mesh(self, radius=1.0, height=1.0, segments=16):
-        """Create a cone mesh centered at origin, pointing along Y axis"""
-        vertices = []
-        indices = []
-        
-        # Create circle of vertices for base
-        for i in range(segments):
-            angle = 2 * np.pi * float(i) / segments
-            x = np.cos(angle) * radius
-            z = np.sin(angle) * radius
-            vertices.append([x, -height/2, z])
-        
-        # Add tip vertex
-        tip_index = len(vertices)
-        vertices.append([0, height/2, 0])
-        
-        # Add center of base
-        base_center_index = len(vertices)
-        vertices.append([0, -height/2, 0])
-        
-        # Create triangles for the sides
-        for i in range(segments):
-            next_i = (i + 1) % segments
-            # Side triangle
-            indices.extend([i, next_i, tip_index])
-            # Base triangle
-            indices.extend([base_center_index, next_i, i])
-        
-        return np.array(vertices, dtype=np.float32), np.array(indices, dtype=np.uint32)
-    
     def add_spheres(self, centers, radius=0.1, color=None, segments=16, unlit=True):
         """
         Add spheres to the GLTF file at specified center points.
@@ -649,24 +774,25 @@ class GLTFGeometryExporter:
             centers = [[0,0,0], [1,1,1]]
             exporter.add_spheres(centers, radius=0.2, color=(1,0,0))  # Red spheres
         """
-        sphere_verts, sphere_indices = self._create_sphere_mesh(radius, segments)
-        all_vertices = []
-        all_indices = []
-        vertex_count = len(sphere_verts)
         
+        material_index = self._create_material( color, unlit=unlit )
+        
+        # Check cache or create new sphere mesh
+        if segments not in self._mesh_cache['sphere']:
+            # Create unit sphere geometry once
+            sphere_verts, sphere_normals, sphere_indices = self._create_sphere_mesh(segments)
+            mesh_index = self._create_primitive_geometry( material_index, sphere_verts, sphere_indices, normals = sphere_normals )
+            self._mesh_cache['sphere'][segments] = mesh_index
+        
+        # Get cached mesh index
+        mesh_index = self._clone_mesh_with_material( self._mesh_cache['sphere'][segments], material_index )
+        
+        # Create a node for each sphere position with appropriate scale
+        scale = [radius, radius, radius]
         for center in centers:
-            # Translate sphere vertices to center position
-            center_verts = sphere_verts + np.array(center)
-            base_index = len(all_vertices)
-            
-            all_vertices.extend(center_verts)
-            all_indices.extend(sphere_indices + base_index)
+            self._create_node(mesh_index, translation=center, scale=scale)
         
-        # Convert to numpy arrays
-        all_vertices = np.array(all_vertices, dtype=np.float32)
-        all_indices = np.array(all_indices, dtype=np.uint32).reshape(-1, 3)
-        
-        return self.add_triangles(all_vertices, all_indices, color, unlit=unlit)
+        return mesh_index
     
     def add_cylinder_strips(self, points, radius=0.05, color=None, segments=16, add_spheres=True, unlit=True):
         """
@@ -688,62 +814,51 @@ class GLTFGeometryExporter:
             exporter.add_cylinder_strips(points, radius=0.1, color=(0,1,0))  # Green tube
         """
         if len(points) < 2:
-            return
+            return None
         
-        all_vertices = []
-        all_indices = []
+        material_index = self._create_material( color, unlit=unlit )
         
-        # First create all cylinders
+        # Check cache or create new unit cylinder mesh
+        if segments not in self._mesh_cache['cylinder']:
+            # Create unit cylinder geometry once
+            cyl_verts, cyl_normals, cyl_indices = self._create_cylinder_mesh(segments)
+            mesh_index = self._create_primitive_geometry( material_index, cyl_verts, cyl_indices, normals = cyl_normals )
+            self._mesh_cache['cylinder'][segments] = mesh_index
+        
+        mesh_index = self._clone_mesh_with_material( self._mesh_cache['cylinder'][segments], material_index )
+        
+        # Create nodes for each cylinder segment
         for i in range(len(points) - 1):
             start = np.array(points[i])
             end = np.array(points[i + 1])
             
-            # Calculate cylinder height and orientation
             direction = end - start
             height = np.linalg.norm(direction)
-            if height < 1e-6:  # Skip if points are too close
+            if height < 1e-6:
                 continue
             
-            # Create transformation matrix to orient cylinder
+            direction_normalized = direction / height
+            
+            # Calculate rotation quaternion from up vector to direction
             up = np.array([0, 1, 0])
-            if np.abs(np.dot(direction / height, up)) > 0.999:
-                # If direction is nearly parallel to up vector, use X axis for rotation
-                rotation_axis = np.array([1, 0, 0])
+            if np.abs(np.dot(direction_normalized, up)) > 0.999:
+                rotation = [0, 0, 0, 1] if direction_normalized[1] > 0 else [1, 0, 0, 0]
             else:
-                rotation_axis = np.cross(up, direction)
-                rotation_axis /= np.linalg.norm(rotation_axis)
+                axis = np.cross(up, direction_normalized)
+                axis = axis / np.linalg.norm(axis)
+                angle = np.arccos(np.dot(up, direction_normalized))
+                s = np.sin(angle/2)
+                rotation = [axis[0]*s, axis[1]*s, axis[2]*s, np.cos(angle/2)]
             
-            angle = np.arccos(np.dot(direction / height, up))
-            c = np.cos(angle)
-            s = np.sin(angle)
-            t = 1 - c
-            
-            # Rotation matrix around arbitrary axis
-            R = np.array([
-                [t*rotation_axis[0]**2 + c, t*rotation_axis[0]*rotation_axis[1] - s*rotation_axis[2], t*rotation_axis[0]*rotation_axis[2] + s*rotation_axis[1]],
-                [t*rotation_axis[0]*rotation_axis[1] + s*rotation_axis[2], t*rotation_axis[1]**2 + c, t*rotation_axis[1]*rotation_axis[2] - s*rotation_axis[0]],
-                [t*rotation_axis[0]*rotation_axis[2] - s*rotation_axis[1], t*rotation_axis[1]*rotation_axis[2] + s*rotation_axis[0], t*rotation_axis[2]**2 + c]
-            ])
-            
-            # Create and transform cylinder
-            cyl_verts, cyl_indices = self._create_cylinder_mesh(radius, height, segments)
-            transformed_verts = (cyl_verts @ R.T) + (start + direction/2)
-            
-            # Add to collection
-            base_index = len(all_vertices)
-            all_vertices.extend(transformed_verts)
-            all_indices.extend(cyl_indices + base_index)
+            translation = start + direction/2
+            scale = [radius, height, radius]
+            self._create_node(mesh_index, translation=translation.tolist(), 
+                            rotation=rotation, scale=scale)
         
-        # Create initial mesh with cylinders
-        vertices = np.array(all_vertices, dtype=np.float32)
-        indices = np.array(all_indices, dtype=np.uint32).reshape(-1, 3)
-        
-        # Add cylindrical segments
-        self.add_triangles(vertices, indices, color, unlit=unlit)
-        
-        # Add spheres at each joint if requested
         if add_spheres:
-            self.add_spheres(points, radius=radius, color=color, segments=segments, unlit=unlit)
+            self.add_spheres(points, radius=radius, color=color, segments=segments)
+        
+        return mesh_index
     
     def add_normal_arrows(self, points, directions, shaft_radius=0.02, head_radius=0.04, 
                          head_length_ratio=0.25, color=None, segments=16, unlit=True):
@@ -768,59 +883,59 @@ class GLTFGeometryExporter:
             directions = [[0,0,1]]  # Points up in Z direction
             exporter.add_normal_arrows(points, directions, color=(1,0,1))  # Purple arrow
         """
-        all_vertices = []
-        all_indices = []
+        
+        material_index = self._create_material( color, unlit=unlit )
+        
+        if segments not in self._mesh_cache['cylinder']:
+            cyl_verts, cyl_normals, cyl_indices = self._create_cylinder_mesh(segments)
+            mesh_index = self._create_primitive_geometry( material_index, cyl_verts, cyl_indices, normals=cyl_normals )
+            self._mesh_cache['cylinder'][segments] = mesh_index
+            
+        if segments not in self._mesh_cache['cone']:
+            cone_verts, cone_normals, cone_indices = self._create_cone_mesh(segments)
+            mesh_index = self._create_primitive_geometry( material_index, cone_verts, cone_indices, normals=cone_normals )
+            self._mesh_cache['cone'][segments] = mesh_index
+        
+        cyl_mesh_index = self._clone_mesh_with_material( self._mesh_cache['cylinder'][segments], material_index )
+        cone_mesh_index = self._clone_mesh_with_material( self._mesh_cache['cone'][segments], material_index )
         
         for point, direction in zip(points, directions):
-            point = np.array(point)
-            direction = np.array(direction)
-            
-            # Normalize direction and calculate lengths
             length = np.linalg.norm(direction)
             if length < 1e-6:
                 continue
-                
-            direction = direction / length
+            
+            direction_normalized = direction / length
+            shaft_length = length * (1 - head_length_ratio)
             head_length = length * head_length_ratio
-            shaft_length = length - head_length
             
-            # Create and orient shaft (cylinder)
+            # Calculate rotation from up vector
             up = np.array([0, 1, 0])
-            if np.abs(np.dot(direction, up)) > 0.999:
-                rotation_axis = np.array([1, 0, 0])
+            if np.abs(np.dot(direction_normalized, up)) > 0.999:
+                rotation = [0, 0, 0, 1] if direction_normalized[1] > 0 else [1, 0, 0, 0]
             else:
-                rotation_axis = np.cross(up, direction)
-                rotation_axis /= np.linalg.norm(rotation_axis)
+                axis = np.cross(up, direction_normalized)
+                axis = axis / np.linalg.norm(axis)
+                angle = np.arccos(np.dot(up, direction_normalized))
+                s = np.sin(angle/2)
+                rotation = [axis[0]*s, axis[1]*s, axis[2]*s, np.cos(angle/2)]
             
-            angle = np.arccos(np.dot(direction, up))
-            c = np.cos(angle)
-            s = np.sin(angle)
-            t = 1 - c
+            # Add shaft
+            shaft_translation = point + direction_normalized * (shaft_length/2)
+            shaft_scale = [shaft_radius, shaft_length, shaft_radius]
+            self._create_node(cyl_mesh_index, 
+                            translation=shaft_translation.tolist(),
+                            rotation=rotation,
+                            scale=shaft_scale)
             
-            R = np.array([
-                [t*rotation_axis[0]**2 + c, t*rotation_axis[0]*rotation_axis[1] - s*rotation_axis[2], t*rotation_axis[0]*rotation_axis[2] + s*rotation_axis[1]],
-                [t*rotation_axis[0]*rotation_axis[1] + s*rotation_axis[2], t*rotation_axis[1]**2 + c, t*rotation_axis[1]*rotation_axis[2] - s*rotation_axis[0]],
-                [t*rotation_axis[0]*rotation_axis[2] - s*rotation_axis[1], t*rotation_axis[1]*rotation_axis[2] + s*rotation_axis[0], t*rotation_axis[2]**2 + c]
-            ])
-            
-            # Create shaft
-            shaft_verts, shaft_indices = self._create_cylinder_mesh(shaft_radius, shaft_length, segments)
-            transformed_shaft = (shaft_verts @ R.T) + (point + direction * shaft_length/2)
-            
-            # Create head (cone)
-            head_verts, head_indices = self._create_cone_mesh(head_radius, head_length, segments)
-            transformed_head = (head_verts @ R.T) + (point + direction * (shaft_length + head_length/2))
-            
-            # Add to collection
-            base_index = len(all_vertices)
-            all_vertices.extend(transformed_shaft)
-            all_indices.extend(shaft_indices + base_index)
-            
-            base_index = len(all_vertices)
-            all_vertices.extend(transformed_head)
-            all_indices.extend(head_indices + base_index)
+            # Add head
+            head_translation = point + direction_normalized * (length - head_length/2)
+            head_scale = [head_radius, head_length, head_radius]
+            self._create_node(cone_mesh_index,
+                            translation=head_translation.tolist(),
+                            rotation=rotation,
+                            scale=head_scale)
         
-        return self.add_triangles(all_vertices, np.array(all_indices).reshape(-1, 3), color, unlit=unlit)
+        return cyl_mesh_index, cone_mesh_index
 
     def save(self, filename):
         """
