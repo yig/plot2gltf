@@ -153,3 +153,11 @@ The scene includes a variety of objects arranged in a way that makes it easy to 
 Public Domain ([CC0](https://creativecommons.org/public-domain/cc0/))
 
 The included [DejaVu font](https://dejavu-fonts.github.io) has its own (free) license.
+
+## Publish to PyPi
+
+Increment `__version__`. Commit changes.
+
+```
+FLIT_USERNAME=__token__ flit publish
+```
