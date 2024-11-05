@@ -110,9 +110,9 @@ class GLTFDemo:
         ]
         
         # Different sized spheres
-        self.exporter.add_spheres([sphere_centers[0]], radius=0.05, color=(1, 0, 0))  # Red
-        self.exporter.add_spheres([sphere_centers[1]], radius=0.1, color=(0, 1, 0))   # Green
-        self.exporter.add_spheres([sphere_centers[2]], radius=0.15, color=(0, 0, 1))  # Blue
+        self.exporter.add_spheres([sphere_centers[0]], radius=0.05, color=(1, 0, 0), unlit=False)  # Red
+        self.exporter.add_spheres([sphere_centers[1]], radius=0.1, color=(0, 1, 0), unlit=False)   # Green
+        self.exporter.add_spheres([sphere_centers[2]], radius=0.15, color=(0, 0, 1), unlit=False)  # Blue
         
         # Add labels
         self.exporter.add_text([-1, 2.3, 0], "Small", size=0.15, color=(1, 0, 0))

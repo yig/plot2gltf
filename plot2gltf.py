@@ -76,36 +76,57 @@ class GLTFGeometryExporter:
         self.gltf.accessors.append(accessor)
         return len(self.gltf.accessors) - 1
     
-    def _create_material(self, color=None, texture_index=None):
-        """Create a material with the given color or texture"""
+    def _create_material(self, color=None, texture_index=None, unlit=False):
+        """
+        Create a material with the given color or texture
+        
+        Parameters:
+            color: (r,g,b) tuple or None for auto-color
+            texture_index: index of texture or None for solid color
+            unlit: if True, creates an unlit material that ignores lighting
+        """
         if color is None:
             color = self._get_unique_color()
         
-        pbr_metallic_roughness = {
-            "baseColorFactor": [*color, 1.0] if texture_index is None else [1.0, 1.0, 1.0, 1.0],
-            "metallicFactor": 0.0,
-            "roughnessFactor": 0.5
+        material = {
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [*color, 1.0] if texture_index is None else [1.0, 1.0, 1.0, 1.0],
+                "metallicFactor": 0.0,
+                "roughnessFactor": 0.5
+            },
+            "alphaMode": "BLEND" if texture_index is not None else "OPAQUE",
+            "doubleSided": True
         }
         
         if texture_index is not None:
-            pbr_metallic_roughness["baseColorTexture"] = {
+            material["pbrMetallicRoughness"]["baseColorTexture"] = {
                 "index": texture_index
             }
         
-        material = Material(
-            pbrMetallicRoughness=pbr_metallic_roughness,
-            alphaMode="BLEND" if texture_index is not None else "OPAQUE",
-            doubleSided=True  # Make text visible from both sides
-        )
+        if unlit:
+            # Add KHR_materials_unlit extension
+            material["extensions"] = {
+                "KHR_materials_unlit": {}
+            }
+            if "extensions" not in self.gltf.extensions:
+                self.gltf.extensions = []
+            if "KHR_materials_unlit" not in self.gltf.extensions:
+                self.gltf.extensions.append("KHR_materials_unlit")
+            if not hasattr(self.gltf, 'extensionsUsed'):
+                self.gltf.extensionsUsed = []
+            if "KHR_materials_unlit" not in self.gltf.extensionsUsed:
+                self.gltf.extensionsUsed.append("KHR_materials_unlit")
         
-        self.gltf.materials.append(material)
+        # Create the material
+        mat = Material(**material)
+        self.gltf.materials.append(mat)
         return len(self.gltf.materials) - 1
 
     def _create_text_texture(self, text, font_size=256, color=(1, 1, 1), font_path=None):
         """Create a texture containing the given text with higher resolution"""
         # Increased base font size significantly
         base_font_size = font_size  # Was 128, now 256
-        padding = base_font_size // 4  # Reduced relative padding
+        padding = font_size // 4  # Reduced relative padding
         
         # Create font (with error handling for missing fonts)
         font = None
@@ -176,7 +197,7 @@ class GLTFGeometryExporter:
         
         return len(self.gltf.textures) - 1
 
-    def add_triangles(self, vertices, faces, color=None):
+    def add_triangles(self, vertices, faces, color=None, unlit=False):
         """Add triangle mesh to the GLTF file"""
         vertices = np.array(vertices, dtype=np.float32)
         faces = np.array(faces, dtype=np.uint32).flatten()  # Flatten for indices
@@ -203,7 +224,7 @@ class GLTFGeometryExporter:
         )
         
         # Create material
-        material_idx = self._create_material(color)
+        material_idx = self._create_material(color, unlit=unlit)
         
         # Create primitive
         primitive = Primitive(
@@ -488,7 +509,7 @@ class GLTFGeometryExporter:
         
         return np.array(vertices, dtype=np.float32), np.array(indices, dtype=np.uint32)
     
-    def add_spheres(self, centers, radius=0.1, color=None, segments=16):
+    def add_spheres(self, centers, radius=0.1, color=None, segments=16, unlit=True):
         """Add spheres at the given center points"""
         sphere_verts, sphere_indices = self._create_sphere_mesh(radius, segments)
         all_vertices = []
@@ -507,9 +528,9 @@ class GLTFGeometryExporter:
         all_vertices = np.array(all_vertices, dtype=np.float32)
         all_indices = np.array(all_indices, dtype=np.uint32).reshape(-1, 3)
         
-        return self.add_triangles(all_vertices, all_indices, color)
+        return self.add_triangles(all_vertices, all_indices, color, unlit=unlit)
     
-    def add_cylinder_strips(self, points, radius=0.05, color=None, segments=16, add_spheres=True):
+    def add_cylinder_strips(self, points, radius=0.05, color=None, segments=16, add_spheres=True, unlit=True):
         """
         Add connected cylinders between consecutive points with optional sphere joints
         
@@ -572,11 +593,11 @@ class GLTFGeometryExporter:
         indices = np.array(all_indices, dtype=np.uint32).reshape(-1, 3)
         
         # Add cylindrical segments
-        self.add_triangles(vertices, indices, color)
+        self.add_triangles(vertices, indices, color, unlit=unlit)
         
         # Add spheres at each joint if requested
         if add_spheres:
-            self.add_spheres(points, radius=radius, color=color, segments=segments)
+            self.add_spheres(points, radius=radius, color=color, segments=segments, unlit=unlit)
     
     def add_normal_arrows(self, points, directions, shaft_radius=0.02, head_radius=0.04, 
                          head_length_ratio=0.25, color=None, segments=16):
