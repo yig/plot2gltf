@@ -1,6 +1,6 @@
 """A module for creating GLTF files with various geometric primitives and 3D text labels."""
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 import numpy as np
 from pygltflib import GLTF2, Buffer, BufferView, Accessor, Mesh, Primitive, Node, Scene, Material
@@ -194,8 +194,8 @@ class GLTFGeometryExporter:
                 FLOAT, 
                 len(normals), 
                 "VEC3",
-                [-1, -1, -1],
-                [1, 1, 1]
+                normals.min(axis=0).tolist(),
+                normals.max(axis=0).tolist()
             )
         
         # Create primitive
