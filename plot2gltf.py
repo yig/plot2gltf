@@ -356,29 +356,44 @@ class GLTFGeometryExporter:
         vertices = []
         indices = []
         
-        # Create rings of vertices
-        for i in range(segments + 1):
-            lat = np.pi * (-0.5 + float(i) / segments)
-            for j in range(segments):
-                lon = 2 * np.pi * float(j) / segments
-                x = np.cos(lat) * np.cos(lon)
-                y = np.cos(lat) * np.sin(lon)
-                z = np.sin(lat)
-                vertices.append([x * radius, y * radius, z * radius])
+        # Create vertices
+        for phi in np.linspace(0, np.pi, segments):  # vertical angle
+            for theta in np.linspace(0, 2*np.pi, segments):  # horizontal angle
+                # Convert spherical coordinates to cartesian
+                x = radius * np.sin(phi) * np.cos(theta)
+                y = radius * np.sin(phi) * np.sin(theta)
+                z = radius * np.cos(phi)
+                vertices.append([x, y, z])
         
         # Create triangles
-        for i in range(segments):
-            for j in range(segments):
-                first = i * segments + j
-                second = first + 1
-                third = (i + 1) * segments + j
-                fourth = third + 1
+        for i in range(segments - 1):  # vertical
+            for j in range(segments - 1):  # horizontal
+                # Current vertex
+                current = i * segments + j
+                # Next vertex in same row
+                next_h = current + 1
+                # Vertex in next row
+                next_v = (i + 1) * segments + j
+                # Next vertex in next row
+                next_vh = next_v + 1
                 
-                # Two triangles per quad
-                indices.extend([first, second, third])
-                indices.extend([second, fourth, third])
+                # Add two triangles for each quad
+                indices.extend([current, next_h, next_v])
+                indices.extend([next_h, next_vh, next_v])
         
-        return np.array(vertices, dtype=np.float32), np.array(indices, dtype=np.uint32)
+        # Close the gap in the last column
+        for i in range(segments - 1):
+            current = i * segments + (segments - 1)
+            next_v = (i + 1) * segments + (segments - 1)
+            first_in_row = i * segments
+            first_next_row = (i + 1) * segments
+            
+            indices.extend([current, first_in_row, next_v])
+            indices.extend([first_in_row, first_next_row, next_v])
+        
+        vertices = np.array(vertices, dtype=np.float32)
+        indices = np.array(indices, dtype=np.uint32)
+        return vertices, indices
     
     def _create_cylinder_mesh(self, radius=1.0, height=1.0, segments=16):
         """Create a cylinder mesh centered at origin, extending along Y axis"""
@@ -453,16 +468,21 @@ class GLTFGeometryExporter:
         sphere_verts, sphere_indices = self._create_sphere_mesh(radius, segments)
         all_vertices = []
         all_indices = []
+        vertex_count = len(sphere_verts)
         
         for center in centers:
             # Translate sphere vertices to center position
-            center_verts = sphere_verts + center
+            center_verts = sphere_verts + np.array(center)
             base_index = len(all_vertices)
             
             all_vertices.extend(center_verts)
             all_indices.extend(sphere_indices + base_index)
         
-        return self.add_triangles(all_vertices, np.array(all_indices).reshape(-1, 3), color)
+        # Convert to numpy arrays
+        all_vertices = np.array(all_vertices, dtype=np.float32)
+        all_indices = np.array(all_indices, dtype=np.uint32).reshape(-1, 3)
+        
+        return self.add_triangles(all_vertices, all_indices, color)
     
     def add_cylinder_strips(self, points, radius=0.05, color=None, segments=16):
         """Add connected cylinders between consecutive points"""
