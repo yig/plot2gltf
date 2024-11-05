@@ -1,0 +1,24 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "plot2gltf"
+readme = "README.md"
+authors = [{name = "Yotam Gingold", email = "yotam@yotamgingold.com"}]
+classifiers = ["License :: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication"]
+dynamic = ["version", "description"]
+dependencies = [
+    "numpy>=2.0.0",
+    "pillow>=11.0.0",
+    "pygltflib>=1.16.2"
+]
+
+[project.urls]
+Home = "https://github.com/yig/plot2gltf"
+
+[project.optional-dependencies]
+test = [
+    "numpy",
+    "polyscope",
+]
