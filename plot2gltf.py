@@ -1,3 +1,7 @@
+"""A module for creating GLTF files with various geometric primitives and 3D text labels."""
+
+__version__ = "1.0"
+
 import numpy as np
 from pygltflib import GLTF2, Buffer, BufferView, Accessor, Mesh, Primitive, Node, Scene, Material
 import colorsys
@@ -25,15 +29,14 @@ class GLTFGeometryExporter:
     """
     A class for creating GLTF files with various geometric primitives and 3D text labels.
     
-    This exporter supports:
+    Supports:
     - Triangle meshes
-    - Line segments
+    - Line segments and line strips (as hairlines or cylinder tubes)
     - Points (as dots or spheres)
     - Normal vectors (as lines or arrows)
-    - 3D text labels
-    - Cylinder strips
+    - Text labels
     
-    All geometry can be colored with either lit (shaded) or unlit (constant color) materials.
+    3D geometry can be colored with either lit (shaded) or unlit (constant color) materials.
     """
     
     def __init__(self):

@@ -1,6 +1,6 @@
-## About
+# plot2gltf
 
-A [Claude](https://claude.ai)-created Python module to save different types of geometry to `glTF`. You can view the result in any GLTF viewer, such as:
+A [Claude](https://claude.ai)-created Python module to save different types of simple geometry and annotations to `glTF`. You can view the result in any GLTF viewer, such as:
 
 - [The `<model-viewer>` tag](<https://modelviewer.dev>)
 - Online viewers like <https://gltf-viewer.donmccurdy.com/>
@@ -9,13 +9,20 @@ A [Claude](https://claude.ai)-created Python module to save different types of g
 
 Key features:
 
-1. Supports multiple geometry types: triangles, lines, points, normals, and text
+1. Supports multiple geometry types:
+    - Triangle meshes
+    - Line segments and line strips (as hairlines or cylinder tubes)
+    - Points (as dots or spheres)
+    - Normal vectors (as lines or arrows)
+    - Text labels
 2. Automatic color generation using the golden ratio for visually distinct colors
 3. Optional manual color specification
 4. All geometries are combined into a single GLTF file
 5. Proper material setup with metallic-roughness PBR workflow
 
-Here's how to use it:
+It is meant to be as easy to use as generating a 3D [matplotlib](https://matplotlib.org) plot.
+
+## Example
 
 ```python
 # Example usage:
@@ -90,6 +97,15 @@ exporter.add_normal_arrows(
 exporter.save("output.gltf")
 ```
 
+## Installation
+
+Copy `plot2gltf.py` and `fonts` into your python.
+
+Install dependencies via:
+
+```
+pip install -r requirements.txt
+```
 
 ## Demo
 
@@ -129,3 +145,9 @@ This demo file showcases:
 The scene includes a variety of objects arranged in a way that makes it easy to see all the features.
 
 ![All the things the demo file showcases](demo_scene.png "demo_scene.gltf")
+
+## License
+
+Public Domain ([CC0](https://creativecommons.org/public-domain/cc0/))
+
+The included [DejaVu font](https://dejavu-fonts.github.io) has its own (free) license.
