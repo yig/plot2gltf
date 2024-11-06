@@ -155,9 +155,9 @@ class GLTFDemo:
         self.exporter.add_cylinder_strips(points2, radius=0.03, color=(0.8, 0.4, 0))
         self.exporter.add_text([2, 1, 0], "With Spheres", size=0.5)
         
-        # 3. Thicker version
+        # 3. Thicker version with automatic color
         points3 = helix_points + [2, 0, 0]  # Shifted right
-        self.exporter.add_cylinder_strips(points3, radius=0.05, color=(0.4, 0.8, 0))
+        self.exporter.add_cylinder_strips(points3, radius=0.05)
         self.exporter.add_text([4, 1, 0], "Thicker", size=0.5)
 
     def demo_normal_arrows(self):
