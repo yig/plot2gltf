@@ -1,6 +1,6 @@
 """A module for creating GLTF files with various geometric primitives and 3D text labels."""
 
-__version__ = "1.0.5"
+__version__ = "1.0.6"
 
 import numpy as np
 from pygltflib import GLTF2, Buffer, BufferView, Accessor, Mesh, Primitive, Node, Scene, Material
@@ -42,9 +42,9 @@ class GLTFGeometryExporter:
     def __init__(self):
         """Initialize a new GLTF geometry exporter."""
         self.gltf = GLTF2()
-        self.gltf.scenes = [Scene(nodes=[0])]
-        self.gltf.nodes = [Node(mesh=0)]
-        self.gltf.meshes = [Mesh(primitives=[])]
+        self.gltf.scenes = [Scene(nodes=[])]
+        self.gltf.nodes = []
+        self.gltf.meshes = []
         self.gltf.materials = []
         self.gltf.buffers = []
         self.gltf.bufferViews = []
@@ -579,7 +579,11 @@ class GLTFGeometryExporter:
             mode=LINES
         )
         
-        self.gltf.meshes[0].primitives.append(primitive)
+        # self.gltf.meshes[0].primitives.append(primitive)
+        mesh = Mesh(primitives=[primitive])
+        self.gltf.meshes.append(mesh)
+        mesh_index = len(self.gltf.meshes) - 1
+        self._create_node(mesh_index)
         return vertices, edges
 
     def add_points(self, vertices, color=None):
@@ -618,7 +622,11 @@ class GLTFGeometryExporter:
             mode=POINTS
         )
         
-        self.gltf.meshes[0].primitives.append(primitive)
+        # self.gltf.meshes[0].primitives.append(primitive)
+        mesh = Mesh(primitives=[primitive])
+        self.gltf.meshes.append(mesh)
+        mesh_index = len(self.gltf.meshes) - 1
+        self._create_node(mesh_index)
         return vertices
 
     def add_normals(self, points, directions, color=None):
@@ -749,7 +757,11 @@ class GLTFGeometryExporter:
             mode=TRIANGLES
         )
         
-        self.gltf.meshes[0].primitives.append(primitive)
+        # self.gltf.meshes[0].primitives.append(primitive)
+        mesh = Mesh(primitives=[primitive])
+        self.gltf.meshes.append(mesh)
+        mesh_index = len(self.gltf.meshes) - 1
+        self._create_node(mesh_index)
         return vertices, indices
     
     def add_spheres(self, centers, radius=0.1, color=None, segments=16, unlit=True):
