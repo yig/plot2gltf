@@ -1,6 +1,6 @@
 """A module for creating GLTF files with various geometric primitives and 3D text labels."""
 
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 
 import numpy as np
 from pygltflib import GLTF2, Buffer, BufferView, Accessor, Mesh, Primitive, Node, Scene, Material
@@ -42,9 +42,9 @@ class GLTFGeometryExporter:
     def __init__(self):
         """Initialize a new GLTF geometry exporter."""
         self.gltf = GLTF2()
-        self.gltf.scenes = [Scene(nodes=[])]
-        self.gltf.nodes = []
-        self.gltf.meshes = []
+        self.gltf.scenes = [Scene(nodes=[0])]
+        self.gltf.nodes = [Node(mesh=0)]
+        self.gltf.meshes = [Mesh(primitives=[])]
         self.gltf.materials = []
         self.gltf.buffers = []
         self.gltf.bufferViews = []
@@ -116,7 +116,7 @@ class GLTFGeometryExporter:
             "pbrMetallicRoughness": {
                 "baseColorFactor": [*color, 1.0] if texture_index is None else [1.0, 1.0, 1.0, 1.0],
                 "metallicFactor": 0.0,
-                "roughnessFactor": 0.5
+                "roughnessFactor": 1.0
             },
             "alphaMode": "BLEND" if texture_index is not None else "OPAQUE",
             "doubleSided": True
