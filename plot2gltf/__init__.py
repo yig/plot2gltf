@@ -1,6 +1,6 @@
 """A module for creating GLTF files with various geometric primitives and 3D text labels."""
 
-__version__ = "1.0.6"
+__version__ = "1.0.7"
 
 import numpy as np
 from pygltflib import GLTF2, Buffer, BufferView, Accessor, Mesh, Primitive, Node, Scene, Material
@@ -764,7 +764,7 @@ class GLTFGeometryExporter:
         self._create_node(mesh_index)
         return vertices, indices
     
-    def add_spheres(self, centers, radius=0.1, color=None, segments=16, unlit=True):
+    def add_spheres(self, centers, radius=0.1, color=None, segments=16, unlit=True, material_index=None):
         """
         Add spheres to the GLTF file at specified center points.
         
@@ -774,6 +774,7 @@ class GLTFGeometryExporter:
             color: optional (r,g,b) color tuple. If None, a unique color will be generated
             segments: number of segments for sphere mesh (default: 16)
             unlit: if True, creates constant-color spheres; if False, uses lit materials (default: True)
+            material_index: optional existing material index. Overrides color and unlit. For recursive use only.
         
         Returns:
             tuple: (vertices array, indices array) of the added geometry
@@ -783,7 +784,7 @@ class GLTFGeometryExporter:
             exporter.add_spheres(centers, radius=0.2, color=(1,0,0))  # Red spheres
         """
         
-        material_index = self._create_material( color, unlit=unlit )
+        if material_index is None: material_index = self._create_material( color, unlit=unlit )
         
         # Check cache or create new sphere mesh
         if segments not in self._mesh_cache['sphere']:
@@ -864,7 +865,7 @@ class GLTFGeometryExporter:
                             rotation=rotation, scale=scale)
         
         if add_spheres:
-            self.add_spheres(points, radius=radius, color=color, segments=segments)
+            self.add_spheres(points, radius=radius, material_index=material_index, segments=segments)
         
         return mesh_index
     
